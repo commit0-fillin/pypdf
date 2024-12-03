@@ -137,7 +137,20 @@ class AlgV4:
         Returns:
             The RC4 encrypted
         """
-        pass
+        # Step e: Pad or truncate the user password
+        padded_user_password = user_password[:32] + _PADDING[:max(0, 32 - len(user_password))]
+
+        # Step f: Encrypt the result of step (e) using RC4
+        o_value = rc4_encrypt(rc4_key, padded_user_password)
+
+        # Step g: For rev 3 or greater, perform 19 additional iterations
+        if rev >= 3:
+            for i in range(1, 20):
+                new_key = bytes(b ^ i for b in rc4_key)
+                o_value = rc4_encrypt(new_key, o_value)
+
+        # Step h: The final o_value is stored as the O entry
+        return o_value
 
     @staticmethod
     def compute_U_value(key: bytes, rev: int, id1_entry: bytes) -> bytes:
