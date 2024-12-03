@@ -87,21 +87,25 @@ class UserAccessPermissions(IntFlag):
     @classmethod
     def _is_reserved(cls, name: str) -> bool:
         """Check if the given name corresponds to a reserved flag entry."""
-        pass
+        return name.startswith('R') and name[1:].isdigit()
 
     @classmethod
     def _is_active(cls, name: str) -> bool:
         """Check if the given reserved name defaults to 1 = active."""
-        pass
+        return name in {'R1', 'R2', 'R7', 'R8', 'R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24', 'R25', 'R26', 'R27', 'R28', 'R29', 'R30', 'R31', 'R32'}
 
     def to_dict(self) -> Dict[str, bool]:
         """Convert the given flag value to a corresponding verbose name mapping."""
-        pass
+        return {name: bool(self & value) for name, value in self.__class__.__members__.items() if not self._is_reserved(name)}
 
     @classmethod
     def from_dict(cls, value: Dict[str, bool]) -> 'UserAccessPermissions':
         """Convert the verbose name mapping to the corresponding flag value."""
-        pass
+        flags = cls(0)
+        for name, is_set in value.items():
+            if is_set:
+                flags |= cls[name]
+        return flags
 
 class Resources:
     """
@@ -391,7 +395,7 @@ class FieldDictionaryAttributes:
         Returns:
             A tuple containing all the attribute constants.
         """
-        pass
+        return tuple(attr for attr in cls.__dict__.keys() if not attr.startswith('_') and isinstance(getattr(cls, attr), str))
 
     @classmethod
     def attributes_dict(cls) -> Dict[str, str]:
@@ -407,7 +411,7 @@ class FieldDictionaryAttributes:
         Returns:
             A dictionary containing attribute keys and their names.
         """
-        pass
+        return {attr: attr.lstrip('/') for attr in cls.attributes()}
 
 class CheckboxRadioButtonAttributes:
     """Table 8.76 Field flags common to all field types."""
@@ -426,7 +430,7 @@ class CheckboxRadioButtonAttributes:
         Returns:
             A tuple containing all the attribute constants.
         """
-        pass
+        return tuple(attr for attr in cls.__dict__.keys() if not attr.startswith('_') and isinstance(getattr(cls, attr), str))
 
     @classmethod
     def attributes_dict(cls) -> Dict[str, str]:
@@ -442,7 +446,7 @@ class CheckboxRadioButtonAttributes:
         Returns:
             A dictionary containing attribute keys and their names.
         """
-        pass
+        return {attr: attr.lstrip('/') for attr in cls.attributes()}
 
 class FieldFlag(IntFlag):
     """Table 8.70 Field flags common to all field types."""
