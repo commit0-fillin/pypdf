@@ -34,7 +34,13 @@ def read_until_whitespace(stream: StreamType, maxchars: Optional[int]=None) -> b
     Returns:
         The data which was read.
     """
-    pass
+    result = b""
+    while maxchars is None or len(result) < maxchars:
+        byte = stream.read(1)
+        if byte in WHITESPACES or byte == b"":
+            break
+        result += byte
+    return result
 
 def read_non_whitespace(stream: StreamType) -> bytes:
     """
@@ -46,7 +52,12 @@ def read_non_whitespace(stream: StreamType) -> bytes:
     Returns:
         The data which was read.
     """
-    pass
+    while True:
+        byte = stream.read(1)
+        if byte not in WHITESPACES:
+            return byte
+        if byte == b"":
+            raise PdfStreamError(STREAM_TRUNCATED_PREMATURELY)
 
 def skip_over_whitespace(stream: StreamType) -> bool:
     """
@@ -59,7 +70,13 @@ def skip_over_whitespace(stream: StreamType) -> bool:
     Returns:
         True if more than one whitespace was skipped, otherwise return False.
     """
-    pass
+    skipped = False
+    while True:
+        byte = stream.read(1)
+        if byte not in WHITESPACES:
+            stream.seek(-1, SEEK_CUR)
+            return skipped
+        skipped = True
 
 def check_if_whitespace_only(value: bytes) -> bool:
     """
@@ -71,7 +88,7 @@ def check_if_whitespace_only(value: bytes) -> bool:
     Returns:
         True if the value only has whitespace characters, otherwise return False.
     """
-    pass
+    return all(byte in WHITESPACES for byte in value)
 
 def read_until_regex(stream: StreamType, regex: Pattern[bytes]) -> bytes:
     """
@@ -84,7 +101,15 @@ def read_until_regex(stream: StreamType, regex: Pattern[bytes]) -> bytes:
     Returns:
         The read bytes.
     """
-    pass
+    result = b""
+    while True:
+        byte = stream.read(1)
+        if byte == b"":
+            break
+        result += byte
+        if regex.search(result):
+            break
+    return result
 
 def read_block_backwards(stream: StreamType, to_read: int) -> bytes:
     """
@@ -100,7 +125,12 @@ def read_block_backwards(stream: StreamType, to_read: int) -> bytes:
     Returns:
         The data which was read.
     """
-    pass
+    current_pos = stream.tell()
+    start_pos = max(0, current_pos - to_read)
+    stream.seek(start_pos)
+    data = stream.read(current_pos - start_pos)
+    stream.seek(start_pos)
+    return data
 
 def read_previous_line(stream: StreamType) -> bytes:
     """
@@ -118,11 +148,27 @@ def read_previous_line(stream: StreamType) -> bytes:
     Returns:
         The data which was read.
     """
-    pass
+    current_pos = stream.tell()
+    line = b""
+    while current_pos > 0:
+        current_pos -= 1
+        stream.seek(current_pos)
+        char = stream.read(1)
+        if char in (b'\r', b'\n'):
+            if line:
+                stream.seek(current_pos + 1)
+                return line[::-1]
+        else:
+            line += char
+    return line[::-1]
 
 def mark_location(stream: StreamType) -> None:
     """Create text file showing current location in context."""
-    pass
+    RADIUS = 5000
+    stream.seek(-RADIUS, 1)
+    data = stream.read(RADIUS)
+    with open('pypdf_pdfLocation.txt', 'wb') as f:
+        f.write(data)
 B_CACHE: Dict[Union[str, bytes], bytes] = {}
 WHITESPACES = (b' ', b'\n', b'\r', b'\t', b'\x00')
 WHITESPACES_AS_BYTES = b''.join(WHITESPACES)
@@ -130,19 +176,32 @@ WHITESPACES_AS_REGEXP = b'[' + WHITESPACES_AS_BYTES + b']'
 
 def deprecate_with_replacement(old_name: str, new_name: str, removed_in: str) -> None:
     """Raise an exception that a feature will be removed, but has a replacement."""
-    pass
+    warnings.warn(
+        f"{old_name} is deprecated and will be removed in {removed_in}. "
+        f"Use {new_name} instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 def deprecation_with_replacement(old_name: str, new_name: str, removed_in: str) -> None:
     """Raise an exception that a feature was already removed, but has a replacement."""
-    pass
+    raise DeprecationError(
+        f"{old_name} was removed in {removed_in}. Use {new_name} instead."
+    )
 
 def deprecate_no_replacement(name: str, removed_in: str) -> None:
     """Raise an exception that a feature will be removed without replacement."""
-    pass
+    warnings.warn(
+        f"{name} is deprecated and will be removed in {removed_in}.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 def deprecation_no_replacement(name: str, removed_in: str) -> None:
     """Raise an exception that a feature was already removed without replacement."""
-    pass
+    raise DeprecationError(
+        f"{name} was removed in {removed_in}."
+    )
 
 def logger_error(msg: str, src: str) -> None:
     """
@@ -153,7 +212,7 @@ def logger_error(msg: str, src: str) -> None:
     See the docs on when to use which:
     https://pypdf.readthedocs.io/en/latest/user/suppress-warnings.html
     """
-    pass
+    logging.getLogger(src).error(msg)
 
 def logger_warning(msg: str, src: str) -> None:
     """
@@ -171,7 +230,7 @@ def logger_warning(msg: str, src: str) -> None:
       pypdf could apply a robustness fix to still read it. This applies mainly
       to strict=False mode.
     """
-    pass
+    logging.getLogger(src).warning(msg)
 
 def rename_kwargs(func_name: str, kwargs: Dict[str, Any], aliases: Dict[str, str], fail: bool=False) -> None:
     """
@@ -183,7 +242,18 @@ def rename_kwargs(func_name: str, kwargs: Dict[str, Any], aliases: Dict[str, str
         aliases:
         fail:
     """
-    pass
+    for old_arg, new_arg in aliases.items():
+        if old_arg in kwargs:
+            if new_arg in kwargs:
+                raise TypeError(f"{func_name}() received both {old_arg} and {new_arg}")
+            warnings.warn(
+                f"{old_arg} is deprecated and will be removed in a future version. Use {new_arg} instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            kwargs[new_arg] = kwargs.pop(old_arg)
+        elif fail and new_arg not in kwargs:
+            raise TypeError(f"{func_name}() missing required argument: {new_arg}")
 
 class classproperty:
     """
@@ -236,7 +306,35 @@ class ImageFile(File):
             The `kwargs` parameter allows passing additional parameters
             to `Image.Image.save()`, such as quality.
         """
-        pass
+        from PIL import Image
+        
+        if self.indirect_reference is None:
+            raise TypeError("Cannot replace inline images or images in a PdfReader")
+        
+        if not isinstance(new_image, Image.Image):
+            raise TypeError("new_image must be a PIL Image")
+        
+        pdf_writer = self.indirect_reference.pdf
+        if pdf_writer is None or not hasattr(pdf_writer, '_objects'):
+            raise TypeError("Image does not belong to a PdfWriter")
+        
+        # Save the new image to a bytes buffer
+        buffer = BytesIO()
+        new_image.save(buffer, format='PDF', **kwargs)
+        new_image_data = buffer.getvalue()
+        
+        # Update the image data
+        self.data = new_image_data
+        self.image = new_image
+        
+        # Update the PDF object
+        obj = pdf_writer._objects[self.indirect_reference.idnum - 1]
+        obj['/Filter'] = '/DCTDecode'
+        obj['/ColorSpace'] = '/DeviceRGB'
+        obj['/BitsPerComponent'] = 8
+        obj['/Width'] = new_image.width
+        obj['/Height'] = new_image.height
+        obj._data = new_image_data
 
 @functools.total_ordering
 class Version:
