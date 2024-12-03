@@ -57,7 +57,8 @@ class Transformation:
 
         ((a, b, 0), (c, d, 0), (e, f, 1))
         """
-        pass
+        a, b, c, d, e, f = self.ctm
+        return ((a, b, 0), (c, d, 0), (e, f, 1))
 
     @staticmethod
     def compress(matrix: TransformationMatrixType) -> CompressedTransformationMatrix:
@@ -70,7 +71,7 @@ class Transformation:
         Returns:
             A tuple representing the transformation matrix as (a, b, c, d, e, f)
         """
-        pass
+        return (matrix[0][0], matrix[0][1], matrix[1][0], matrix[1][1], matrix[2][0], matrix[2][1])
 
     def transform(self, m: 'Transformation') -> 'Transformation':
         """
@@ -88,7 +89,19 @@ class Transformation:
             >>> op = Transformation().transform(Transformation((-1, 0, 0, 1, iwidth, 0))) # horizontal mirror
             >>> page.add_transformation(op)
         """
-        pass
+        a1, b1, c1, d1, e1, f1 = self.ctm
+        a2, b2, c2, d2, e2, f2 = m.ctm
+        
+        new_ctm = (
+            a1 * a2 + b1 * c2,
+            a1 * b2 + b1 * d2,
+            c1 * a2 + d1 * c2,
+            c1 * b2 + d1 * d2,
+            e1 * a2 + f1 * c2 + e2,
+            e1 * b2 + f1 * d2 + f2
+        )
+        
+        return Transformation(new_ctm)
 
     def translate(self, tx: float=0, ty: float=0) -> 'Transformation':
         """
@@ -101,7 +114,8 @@ class Transformation:
         Returns:
             A new ``Transformation`` instance
         """
-        pass
+        translation_matrix = (1, 0, 0, 1, tx, ty)
+        return self.transform(Transformation(translation_matrix))
 
     def scale(self, sx: Optional[float]=None, sy: Optional[float]=None) -> 'Transformation':
         """
@@ -117,7 +131,14 @@ class Transformation:
         Returns:
             A new Transformation instance with the scaled matrix.
         """
-        pass
+        if sx is None and sy is None:
+            return self
+        if sx is None:
+            sx = sy
+        if sy is None:
+            sy = sx
+        scale_matrix = (sx, 0, 0, sy, 0, 0)
+        return self.transform(Transformation(scale_matrix))
 
     def rotate(self, rotation: float) -> 'Transformation':
         """
@@ -129,7 +150,12 @@ class Transformation:
         Returns:
             A new ``Transformation`` instance with the rotated matrix.
         """
-        pass
+        import math
+        theta = math.radians(rotation)
+        c = math.cos(theta)
+        s = math.sin(theta)
+        rotate_matrix = (c, s, -s, c, 0, 0)
+        return self.transform(Transformation(rotate_matrix))
 
     def __repr__(self) -> str:
         return f'Transformation(ctm={self.ctm})'
@@ -140,11 +166,16 @@ class Transformation:
 
         Args:
             pt: A tuple or list representing the point in the form (x, y)
+            as_object: If True, return a list; if False, return a tuple
 
         Returns:
             A tuple or list representing the transformed point in the form (x', y')
         """
-        pass
+        x, y = pt
+        a, b, c, d, e, f = self.ctm
+        x_new = a * x + c * y + e
+        y_new = b * x + d * y + f
+        return [x_new, y_new] if as_object else (x_new, y_new)
 
 class PageObject(DictionaryObject):
     """
