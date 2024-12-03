@@ -64,15 +64,18 @@ class TextStateParams:
 
     def font_size_matrix(self) -> List[float]:
         """Font size matrix"""
-        pass
+        return [self.font_size * self.Tz / 100, 0, 0, self.font_size, 0, 0]
 
     def displaced_transform(self) -> List[float]:
         """Effective transform matrix after text has been rendered."""
-        pass
+        displacement = self.displacement_matrix()
+        return mult(displacement, self.transform)
 
     def render_transform(self) -> List[float]:
         """Effective transform matrix accounting for font size, Tz, and Ts."""
-        pass
+        font_matrix = self.font_size_matrix()
+        text_rise = [1, 0, 0, 1, 0, self.Ts]
+        return mult(mult(text_rise, font_matrix), self.transform)
 
     def displacement_matrix(self, word: Union[str, None]=None, TD_offset: float=0.0) -> List[float]:
         """
@@ -83,13 +86,36 @@ class TextStateParams:
                 returned.
             TD_offset (float, optional): translation applied by TD operator. Defaults to 0.0.
         """
-        pass
+        if word is None:
+            word = self.txt
+        tx = self.word_tx(word, TD_offset)
+        return [1, 0, 0, 1, tx, 0]
 
     def word_tx(self, word: str, TD_offset: float=0.0) -> float:
         """Horizontal text displacement for any word according this text state"""
-        pass
+        word_width = self.font.word_width(word)
+        space_count = word.count(' ')
+        tx = ((word_width - space_count) * self.font_size + space_count * self.Tw + len(word) * self.Tc) * self.Tz / 100
+        return tx + TD_offset
 
     @staticmethod
     def to_dict(inst: 'TextStateParams') -> Dict[str, Any]:
         """Dataclass to dict for json.dumps serialization"""
-        pass
+        return {
+            'txt': inst.txt,
+            'font': Font.to_dict(inst.font),
+            'font_size': inst.font_size,
+            'Tc': inst.Tc,
+            'Tw': inst.Tw,
+            'Tz': inst.Tz,
+            'TL': inst.TL,
+            'Ts': inst.Ts,
+            'transform': inst.transform,
+            'tx': inst.tx,
+            'ty': inst.ty,
+            'displaced_tx': inst.displaced_tx,
+            'space_tx': inst.space_tx,
+            'font_height': inst.font_height,
+            'flip_vertical': inst.flip_vertical,
+            'rotated': inst.rotated
+        }
