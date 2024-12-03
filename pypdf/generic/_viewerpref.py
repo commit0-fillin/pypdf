@@ -39,10 +39,7 @@ class ViewerPreferences(DictionaryObject):
         return DictionaryObject.__new__(cls)
 
     def __init__(self, obj: Optional[DictionaryObject]=None) -> None:
-        super().__init__(self)
+        super().__init__()
         if obj is not None:
             self.update(obj.items())
-        try:
-            self.indirect_reference = obj.indirect_reference
-        except AttributeError:
-            pass
+        self.indirect_reference = getattr(obj, 'indirect_reference', None)
