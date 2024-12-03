@@ -79,11 +79,15 @@ class PageRange:
         Returns:
             True, if the ``input`` is a valid PageRange.
         """
-        pass
+        if isinstance(input, (PageRange, slice)):
+            return True
+        if isinstance(input, str):
+            return bool(re.match(PAGE_RANGE_RE, input))
+        return False
 
     def to_slice(self) -> slice:
         """Return the slice equivalent of this page range."""
-        pass
+        return self._slice
 
     def __str__(self) -> str:
         """A string like "1:2:3"."""
@@ -114,7 +118,7 @@ class PageRange:
         Returns:
             Arguments for range().
         """
-        pass
+        return self._slice.indices(n)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PageRange):
@@ -147,5 +151,30 @@ def parse_filename_page_ranges(args: List[Union[str, PageRange, None]]) -> List[
     Returns:
         A list of (filename, page_range) pairs.
     """
-    pass
+    result = []
+    current_filename = None
+
+    for arg in args:
+        if arg is None:
+            continue
+        if isinstance(arg, str):
+            if PageRange.valid(arg):
+                if current_filename is None:
+                    raise ValueError("Page range specified before filename")
+                result.append((current_filename, PageRange(arg)))
+            else:
+                if current_filename is not None:
+                    result.append((current_filename, PAGE_RANGE_ALL))
+                current_filename = arg
+        elif isinstance(arg, (PageRange, slice)):
+            if current_filename is None:
+                raise ValueError("Page range specified before filename")
+            result.append((current_filename, PageRange(arg)))
+        else:
+            raise TypeError(f"Unexpected argument type: {type(arg)}")
+
+    if current_filename is not None:
+        result.append((current_filename, PAGE_RANGE_ALL))
+
+    return result
 PageRangeSpec = Union[str, PageRange, Tuple[int, int], Tuple[int, int, int], List[int]]
