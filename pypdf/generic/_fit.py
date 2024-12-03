@@ -27,7 +27,7 @@ class Fit:
         Returns:
             The created fit object.
         """
-        pass
+        return cls('XYZ', (left, top, zoom))
 
     @classmethod
     def fit(cls) -> 'Fit':
@@ -40,7 +40,7 @@ class Fit:
         different, use the smaller of the two, centering the page within the
         window in the other dimension.
         """
-        pass
+        return cls('Fit')
 
     @classmethod
     def fit_horizontally(cls, top: Optional[float]=None) -> 'Fit':
@@ -59,7 +59,7 @@ class Fit:
         Returns:
             The created fit object.
         """
-        pass
+        return cls('FitH', (top,))
 
     @classmethod
     def fit_rectangle(cls, left: Optional[float]=None, bottom: Optional[float]=None, right: Optional[float]=None, top: Optional[float]=None) -> 'Fit':
@@ -85,7 +85,7 @@ class Fit:
         Returns:
             The created fit object.
         """
-        pass
+        return cls('FitR', (left, bottom, right, top))
 
     @classmethod
     def fit_box(cls) -> 'Fit':
@@ -98,7 +98,7 @@ class Fit:
         different, use the smaller of the two, centering the bounding box
         within the window in the other dimension.
         """
-        pass
+        return cls('FitB')
 
     @classmethod
     def fit_box_horizontally(cls, top: Optional[float]=None) -> 'Fit':
@@ -117,7 +117,7 @@ class Fit:
         Returns:
             The created fit object.
         """
-        pass
+        return cls('FitBH', (top,))
 
     @classmethod
     def fit_box_vertically(cls, left: Optional[float]=None) -> 'Fit':
@@ -136,7 +136,7 @@ class Fit:
         Returns:
             The created fit object.
         """
-        pass
+        return cls('FitBV', (left,))
 
     def __str__(self) -> str:
         if not self.fit_args:
