@@ -74,12 +74,15 @@ class PdfReader(PdfDocCommon):
 
     def close(self) -> None:
         """Close the stream if opened in __init__ and clear memory."""
-        pass
+        if self._stream_opened:
+            self.stream.close()
+        self.resolved_objects.clear()
+        self.flattened_pages = None
 
     @property
     def root_object(self) -> DictionaryObject:
         """Provide access to "/Root". Standardized with PdfWriter."""
-        pass
+        return cast(DictionaryObject, self.trailer[TK.ROOT])
 
     @property
     def _info(self) -> Optional[DictionaryObject]:
@@ -89,7 +92,9 @@ class PdfReader(PdfDocCommon):
         Returns:
             /Info Dictionary; None if the entry does not exist
         """
-        pass
+        if TK.INFO not in self.trailer:
+            return None
+        return cast(DictionaryObject, self.trailer[TK.INFO].get_object())
 
     @property
     def _ID(self) -> Optional[ArrayObject]:
@@ -99,7 +104,9 @@ class PdfReader(PdfDocCommon):
         Returns:
             /ID array; None if the entry does not exist
         """
-        pass
+        if TK.ID not in self.trailer:
+            return None
+        return cast(ArrayObject, self.trailer[TK.ID])
 
     def _repr_mimebundle_(self, include: Union[None, Iterable[str]]=None, exclude: Union[None, Iterable[str]]=None) -> Dict[str, Any]:
         """
@@ -110,7 +117,12 @@ class PdfReader(PdfDocCommon):
 
         See https://ipython.readthedocs.io/en/stable/config/integrating.html
         """
-        pass
+        from io import BytesIO
+        bio = BytesIO()
+        self.stream.seek(0)
+        bio.write(self.stream.read())
+        bio.seek(0)
+        return {"application/pdf": bio.getvalue()}
 
     @property
     def pdf_header(self) -> str:
@@ -120,12 +132,17 @@ class PdfReader(PdfDocCommon):
         This is typically something like ``'%PDF-1.6'`` and can be used to
         detect if the file is actually a PDF file and which version it is.
         """
-        pass
+        self.stream.seek(0)
+        return self.stream.read(8).decode('ascii')
 
     @property
     def xmp_metadata(self) -> Optional[XmpInformation]:
         """XMP (Extensible Metadata Platform) data."""
-        pass
+        try:
+            xmp_ref = self.trailer["/Root"]["/Metadata"]
+        except KeyError:
+            return None
+        return XmpInformation(xmp_ref.get_object())
 
     def _get_page(self, page_number: int) -> PageObject:
         """
@@ -138,7 +155,11 @@ class PdfReader(PdfDocCommon):
         Returns:
             A :class:`PageObject<pypdf._page.PageObject>` instance.
         """
-        pass
+        if self.flattened_pages is None:
+            self._flatten()
+        if page_number < 0 or page_number >= len(self.flattened_pages):
+            raise IndexError("Page number {0} invalid".format(page_number))
+        return cast(PageObject, self.flattened_pages[page_number])
 
     def _get_page_number_by_indirect(self, indirect_reference: Union[None, int, NullObject, IndirectObject]) -> Optional[int]:
         """
@@ -150,11 +171,27 @@ class PdfReader(PdfDocCommon):
         Returns:
             The page number or None
         """
-        pass
+        if self._page_id2num is None:
+            self._page_id2num = {}
+            for i, page in enumerate(self.pages):
+                if page.indirect_reference is not None:
+                    self._page_id2num[page.indirect_reference.idnum] = i
+        if indirect_reference is None or isinstance(indirect_reference, NullObject):
+            return None
+        if isinstance(indirect_reference, int):
+            idnum = indirect_reference
+        else:
+            idnum = indirect_reference.idnum
+        return self._page_id2num.get(idnum)
 
     def _basic_validation(self, stream: StreamType) -> None:
         """Ensure file is not empty. Read at most 5 bytes."""
-        pass
+        stream.seek(0)
+        first_bytes = stream.read(5)
+        if first_bytes == b"":
+            raise EmptyFileError("Cannot read an empty file")
+        if first_bytes != b"%PDF-":
+            raise PdfReadError(f"PDF starts with {first_bytes!r}, not '%PDF-'")
 
     def _find_eof_marker(self, stream: StreamType) -> None:
         """
@@ -164,7 +201,12 @@ class PdfReader(PdfDocCommon):
         the file. Hence for standard-compliant PDF documents this function will
         read only the last part (DEFAULT_BUFFER_SIZE).
         """
-        pass
+        stream.seek(-1024, 2)
+        end = stream.read().lower()
+        idx = end.rfind(b"%%eof")
+        if idx == -1:
+            raise PdfReadError("EOF marker not found")
+        stream.seek(stream.tell() - (len(end) - idx))
 
     def _find_startxref_pos(self, stream: StreamType) -> int:
         """
@@ -176,7 +218,11 @@ class PdfReader(PdfDocCommon):
         Returns:
             The bytes offset
         """
-        pass
+        stream.seek(-1024, 2)
+        line = b""
+        while b"startxref" not in line:
+            line = read_previous_line(stream)
+        return int(read_previous_line(stream))
 
     @staticmethod
     def _get_xref_issues(stream: StreamType, startxref: int) -> int:
@@ -190,7 +236,13 @@ class PdfReader(PdfDocCommon):
         Returns:
             0 means no issue, other values represent specific issues.
         """
-        pass
+        stream.seek(startxref)
+        try:
+            if stream.read(5) != b"xref ":
+                return 1
+        except UnicodeDecodeError:
+            return 2
+        return 0
 
     def decrypt(self, password: Union[str, bytes]) -> PasswordType:
         """
@@ -211,7 +263,9 @@ class PdfReader(PdfDocCommon):
             An indicator if the document was decrypted and whether it was the
             owner password or the user password.
         """
-        pass
+        if not self.is_encrypted:
+            raise PdfReadError("File is not encrypted")
+        return self._encryption.verify(password)
 
     @property
     def is_encrypted(self) -> bool:
@@ -221,7 +275,7 @@ class PdfReader(PdfDocCommon):
         Note that this property, if true, will remain true even after the
         :meth:`decrypt()<pypdf.PdfReader.decrypt>` method is called.
         """
-        pass
+        return self._encryption is not None
 
     def add_form_topname(self, name: str) -> Optional[DictionaryObject]:
         """
@@ -233,7 +287,17 @@ class PdfReader(PdfDocCommon):
         Returns:
             The created object. ``None`` means no object was created.
         """
-        pass
+        if "/AcroForm" not in self.root_object:
+            return None
+        acroform = cast(DictionaryObject, self.root_object["/AcroForm"])
+        if "/Fields" not in acroform:
+            return None
+        fields = cast(ArrayObject, acroform["/Fields"])
+        new_field = DictionaryObject()
+        new_field[NameObject("/T")] = TextStringObject(name)
+        new_field[NameObject("/Kids")] = fields
+        acroform[NameObject("/Fields")] = ArrayObject([new_field])
+        return new_field
 
     def rename_form_topname(self, name: str) -> Optional[DictionaryObject]:
         """
@@ -245,4 +309,16 @@ class PdfReader(PdfDocCommon):
         Returns:
             The modified object. ``None`` means no object was modified.
         """
-        pass
+        if "/AcroForm" not in self.root_object:
+            return None
+        acroform = cast(DictionaryObject, self.root_object["/AcroForm"])
+        if "/Fields" not in acroform:
+            return None
+        fields = cast(ArrayObject, acroform["/Fields"])
+        if len(fields) != 1:
+            return None
+        top_field = fields[0]
+        if not isinstance(top_field, DictionaryObject):
+            return None
+        top_field[NameObject("/T")] = TextStringObject(name)
+        return top_field
