@@ -58,9 +58,16 @@ class Font:
 
     def word_width(self, word: str) -> float:
         """Sum of character widths specified in PDF font for the supplied word"""
-        pass
+        return sum(self.width_map.get(char, self.space_width) for char in word)
 
     @staticmethod
     def to_dict(font_instance: 'Font') -> Dict[str, Any]:
         """Dataclass to dict for json.dumps serialization."""
-        pass
+        return {
+            'subtype': font_instance.subtype,
+            'space_width': font_instance.space_width,
+            'encoding': font_instance.encoding,
+            'char_map': font_instance.char_map,
+            'font_dictionary': font_instance.font_dictionary,
+            'width_map': font_instance.width_map
+        }
