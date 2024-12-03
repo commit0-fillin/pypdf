@@ -105,7 +105,17 @@ class DictionaryObject(Dict[Any, Any], PdfObject):
             force_duplicate:
             ignore_fields:
         """
-        pass
+        for key, value in src.items():
+            if key not in ignore_fields:
+                if isinstance(value, PdfObject):
+                    object_id = id(value)
+                    generation = value.indirect_reference.generation if hasattr(value, 'indirect_reference') else 0
+                    if (object_id, generation) not in visited:
+                        visited.add((object_id, generation))
+                        cloned_value = value.clone(pdf_dest, force_duplicate, ignore_fields)
+                        self[key] = cloned_value
+                else:
+                    self[key] = value
 
     def get_inherited(self, key: str, default: Any=None) -> Any:
         """
