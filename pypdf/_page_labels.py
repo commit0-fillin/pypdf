@@ -73,7 +73,59 @@ def index2label(reader: PdfCommonDocProtocol, index: int) -> str:
     Returns:
         The label of the page, e.g. "iv" or "4".
     """
-    pass
+    if "/PageLabels" not in reader.root_object:
+        return str(index + 1)
+
+    nums = reader.root_object["/PageLabels"]["/Nums"]
+    label_dict = None
+    start_index = 0
+
+    for i in range(0, len(nums), 2):
+        if nums[i] > index:
+            break
+        start_index = nums[i]
+        label_dict = reader.get_object(nums[i + 1])
+
+    if label_dict is None:
+        return str(index + 1)
+
+    style = label_dict.get("/S", "D")
+    prefix = label_dict.get("/P", "")
+    start = label_dict.get("/St", 1)
+
+    page_index = index - start_index + start
+
+    if style == "/D":
+        return f"{prefix}{page_index}"
+    elif style == "/R":
+        return f"{prefix}{to_roman(page_index).upper()}"
+    elif style == "/r":
+        return f"{prefix}{to_roman(page_index).lower()}"
+    elif style == "/A":
+        return f"{prefix}{to_alpha(page_index).upper()}"
+    elif style == "/a":
+        return f"{prefix}{to_alpha(page_index).lower()}"
+    else:
+        return str(index + 1)
+
+def to_roman(num: int) -> str:
+    roman_symbols = [
+        ("M", 1000), ("CM", 900), ("D", 500), ("CD", 400), ("C", 100), ("XC", 90),
+        ("L", 50), ("XL", 40), ("X", 10), ("IX", 9), ("V", 5), ("IV", 4), ("I", 1)
+    ]
+    result = ""
+    for symbol, value in roman_symbols:
+        while num >= value:
+            result += symbol
+            num -= value
+    return result
+
+def to_alpha(num: int) -> str:
+    result = ""
+    while num > 0:
+        num, remainder = divmod(num - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
 
 def nums_insert(key: NumberObject, value: DictionaryObject, nums: ArrayObject) -> None:
     """
@@ -86,7 +138,12 @@ def nums_insert(key: NumberObject, value: DictionaryObject, nums: ArrayObject) -
         value: value of the entry
         nums: Nums array to modify
     """
-    pass
+    for i in range(0, len(nums), 2):
+        if nums[i] > key:
+            nums.insert(i, value)
+            nums.insert(i, key)
+            return
+    nums.extend([key, value])
 
 def nums_clear_range(key: NumberObject, page_index_to: int, nums: ArrayObject) -> None:
     """
@@ -99,7 +156,13 @@ def nums_clear_range(key: NumberObject, page_index_to: int, nums: ArrayObject) -
         page_index_to: The page index of the upper limit of the range
         nums: Nums array to modify
     """
-    pass
+    start_index = nums.index(key) if key in nums else -2
+    i = start_index + 2
+    while i < len(nums):
+        if nums[i] >= page_index_to:
+            break
+        i += 2
+    del nums[start_index+2:i]
 
 def nums_next(key: NumberObject, nums: ArrayObject) -> Tuple[Optional[NumberObject], Optional[DictionaryObject]]:
     """
@@ -111,4 +174,7 @@ def nums_next(key: NumberObject, nums: ArrayObject) -> Tuple[Optional[NumberObje
         key: number key of the entry
         nums: Nums array
     """
-    pass
+    for i in range(0, len(nums), 2):
+        if nums[i] > key:
+            return nums[i], nums[i+1]
+    return None, None
