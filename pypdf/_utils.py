@@ -365,3 +365,20 @@ class Version:
             elif self_suffix > other_suffix:
                 return False
         return len(self.components) < len(other.components)
+
+    def _parse_version(self, version_str: str) -> List[Tuple[int, str]]:
+        components = []
+        for part in version_str.split('.'):
+            match = self.COMPONENT_PATTERN.match(part)
+            if match:
+                value, suffix = match.groups()
+                components.append((int(value), suffix))
+            else:
+                components.append((0, part))
+        return components
+
+    def __str__(self) -> str:
+        return self.version_str
+
+    def __repr__(self) -> str:
+        return f"Version('{self.version_str}')"
