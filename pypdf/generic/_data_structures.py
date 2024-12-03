@@ -30,11 +30,18 @@ class ArrayObject(List[Any], PdfObject):
 
     def clone(self, pdf_dest: PdfWriterProtocol, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'ArrayObject':
         """Clone object into pdf_dest."""
-        pass
+        cloned_array = ArrayObject()
+        for item in self:
+            if isinstance(item, PdfObject):
+                cloned_item = item.clone(pdf_dest, force_duplicate, ignore_fields)
+            else:
+                cloned_item = item
+            cloned_array.append(cloned_item)
+        return cloned_array
 
     def items(self) -> Iterable[Any]:
         """Emulate DictionaryObject.items for a list (index, object)."""
-        pass
+        return enumerate(self)
 
     def __add__(self, lst: Any) -> 'ArrayObject':
         """
@@ -70,19 +77,23 @@ class ArrayObject(List[Any], PdfObject):
 
     def __isub__(self, lst: Any) -> Self:
         """Allow to remove items"""
-        for x in self._to_lst(lst):
-            try:
-                x = self.index(x)
-                del self[x]
-            except ValueError:
-                pass
+        to_remove = self._to_lst(lst)
+        self[:] = [item for item in self if item not in to_remove]
         return self
 
 class DictionaryObject(Dict[Any, Any], PdfObject):
 
     def clone(self, pdf_dest: PdfWriterProtocol, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'DictionaryObject':
         """Clone object into pdf_dest."""
-        pass
+        cloned_dict = DictionaryObject()
+        for key, value in self.items():
+            if key not in ignore_fields:
+                if isinstance(value, PdfObject):
+                    cloned_value = value.clone(pdf_dest, force_duplicate, ignore_fields)
+                else:
+                    cloned_value = value
+                cloned_dict[key] = cloned_value
+        return cloned_dict
 
     def _clone(self, src: 'DictionaryObject', pdf_dest: PdfWriterProtocol, force_duplicate: bool, ignore_fields: Optional[Sequence[Union[str, int]]], visited: Set[Tuple[int, int]]) -> None:
         """
@@ -109,7 +120,14 @@ class DictionaryObject(Dict[Any, Any], PdfObject):
         Returns:
             Current key or inherited one, otherwise default value.
         """
-        pass
+        try:
+            return self[key]
+        except KeyError:
+            if "/Parent" in self:
+                parent = self["/Parent"]
+                if isinstance(parent, DictionaryObject):
+                    return parent.get_inherited(key, default)
+        return default
 
     def __setitem__(self, key: Any, value: Any) -> Any:
         if not isinstance(key, PdfObject):
@@ -134,7 +152,17 @@ class DictionaryObject(Dict[Any, Any], PdfObject):
           that can be used to access XMP metadata from the document. Can also
           return None if no metadata was found on the document root.
         """
-        pass
+        from ..xmp import XmpInformation
+
+        metadata = self.get("/Metadata", None)
+        if metadata is None:
+            return None
+        metadata = metadata.get_object()
+
+        if not isinstance(metadata, XmpInformation):
+            metadata = XmpInformation(metadata)
+            self[NameObject("/Metadata")] = metadata
+        return metadata
 
 class TreeObject(DictionaryObject):
 
@@ -156,11 +184,39 @@ class TreeObject(DictionaryObject):
             cur:
             last:
         """
-        pass
+        if prev is None:
+            if last == cur:
+                self[NameObject("/First")] = None
+                self[NameObject("/Last")] = None
+            else:
+                self[NameObject("/First")] = cur[NameObject("/Next")]
+            cur[NameObject("/Next")][NameObject("/Prev")] = None
+        elif last == cur:
+            self[NameObject("/Last")] = prev
+            prev[NameObject("/Next")] = None
+        else:
+            prev[NameObject("/Next")] = cur[NameObject("/Next")]
+            cur[NameObject("/Next")][NameObject("/Prev")] = prev_ref
+
+        self[NameObject("/Count")] = NumberObject(self[NameObject("/Count")] - 1)
 
     def remove_from_tree(self) -> None:
         """Remove the object from the tree it is in."""
-        pass
+        if "/Parent" not in self:
+            return
+        parent = self["/Parent"]
+        prev = None
+        prev_ref = None
+        cur = parent["/First"]
+        last = parent["/Last"]
+        while cur is not None:
+            if cur.indirect_reference == self.indirect_reference:
+                parent._remove_node_from_tree(prev, prev_ref, cur, last)
+                break
+            prev = cur
+            prev_ref = cur.indirect_reference
+            cur = cur["/Next"]
+        _reset_node_tree_relationship(self)
 
 def _reset_node_tree_relationship(child_obj: Any) -> None:
     """
@@ -171,7 +227,11 @@ def _reset_node_tree_relationship(child_obj: Any) -> None:
     Args:
         child_obj:
     """
-    pass
+    del child_obj["/Parent"]
+    if "/Next" in child_obj:
+        del child_obj["/Next"]
+    if "/Prev" in child_obj:
+        del child_obj["/Prev"]
 
 class StreamObject(DictionaryObject):
 
@@ -189,7 +249,10 @@ class StreamObject(DictionaryObject):
             force_duplicate:
             ignore_fields:
         """
-        pass
+        super()._clone(src, pdf_dest, force_duplicate, ignore_fields, visited)
+        self._data = src._data
+        if hasattr(src, 'decoded_self'):
+            self.decoded_self = src.decoded_self
 
     def decode_as_image(self) -> Any:
         """
@@ -203,7 +266,21 @@ class StreamObject(DictionaryObject):
                 It is recommended to catch exceptions to prevent
                 stops in your program.
         """
-        pass
+        from PIL import Image
+        import io
+
+        if '/Filter' in self:
+            data = self.get_data()
+            if self['/Filter'] == '/FlateDecode':
+                img = Image.open(io.BytesIO(data))
+                return img
+            elif self['/Filter'] == '/DCTDecode':
+                img = Image.open(io.BytesIO(data))
+                return img
+            else:
+                raise NotImplementedError(f"Decoding filter {self['/Filter']} is not supported")
+        else:
+            raise ValueError("No filter found in stream object")
 
 class DecodedStreamObject(StreamObject):
     pass
@@ -266,7 +343,10 @@ class ContentStream(DecodedStreamObject):
         Returns:
             The cloned ContentStream
         """
-        pass
+        cloned = ContentStream(self, pdf_dest)
+        cloned._operations = [op.clone() for op in self._operations]
+        cloned.forced_encoding = self.forced_encoding
+        return cloned
 
     def _clone(self, src: DictionaryObject, pdf_dest: PdfWriterProtocol, force_duplicate: bool, ignore_fields: Optional[Sequence[Union[str, int]]], visited: Set[Tuple[int, int]]) -> None:
         """
@@ -278,7 +358,10 @@ class ContentStream(DecodedStreamObject):
             force_duplicate:
             ignore_fields:
         """
-        pass
+        super()._clone(src, pdf_dest, force_duplicate, ignore_fields, visited)
+        if isinstance(src, ContentStream):
+            self._operations = [op.clone() for op in src._operations]
+            self.forced_encoding = src.forced_encoding
 
 class Field(TreeObject):
     """
@@ -300,37 +383,37 @@ class Field(TreeObject):
         if isinstance(self.get('/V'), EncodedStreamObject):
             d = cast(EncodedStreamObject, self[NameObject('/V')]).get_data()
             if isinstance(d, bytes):
-                d_str = d.decode()
+                d_str = d.decode('utf-8', errors='replace')
             elif d is None:
                 d_str = ''
             else:
-                raise Exception('Should never happen')
+                raise ValueError(f'Unexpected type for /V: {type(d)}')
             self[NameObject('/V')] = TextStringObject(d_str)
 
     @property
     def field_type(self) -> Optional[NameObject]:
         """Read-only property accessing the type of this field."""
-        pass
+        return self.get("/FT")
 
     @property
     def parent(self) -> Optional[DictionaryObject]:
         """Read-only property accessing the parent of this field."""
-        pass
+        return self.get("/Parent")
 
     @property
     def kids(self) -> Optional['ArrayObject']:
         """Read-only property accessing the kids of this field."""
-        pass
+        return self.get("/Kids")
 
     @property
     def name(self) -> Optional[str]:
         """Read-only property accessing the name of this field."""
-        pass
+        return self.get("/T")
 
     @property
     def alternate_name(self) -> Optional[str]:
         """Read-only property accessing the alternate name of this field."""
-        pass
+        return self.get("/TU")
 
     @property
     def mapping_name(self) -> Optional[str]:
@@ -340,7 +423,7 @@ class Field(TreeObject):
         This name is used by pypdf as a key in the dictionary returned by
         :meth:`get_fields()<pypdf.PdfReader.get_fields>`
         """
-        pass
+        return self.get("/TM")
 
     @property
     def flags(self) -> Optional[int]:
@@ -348,7 +431,7 @@ class Field(TreeObject):
         Read-only property accessing the field flags, specifying various
         characteristics of the field (see Table 8.70 of the PDF 1.7 reference).
         """
-        pass
+        return self.get("/Ff")
 
     @property
     def value(self) -> Optional[Any]:
@@ -357,12 +440,12 @@ class Field(TreeObject):
 
         Format varies based on field type.
         """
-        pass
+        return self.get("/V")
 
     @property
     def default_value(self) -> Optional[Any]:
         """Read-only property accessing the default value of this field."""
-        pass
+        return self.get("/DV")
 
     @property
     def additional_actions(self) -> Optional[DictionaryObject]:
@@ -372,7 +455,7 @@ class Field(TreeObject):
         This dictionary defines the field's behavior in response to trigger
         events. See Section 8.5.2 of the PDF 1.7 reference.
         """
-        pass
+        return self.get("/AA")
 
 class Destination(TreeObject):
     """
@@ -429,47 +512,50 @@ class Destination(TreeObject):
     @property
     def title(self) -> Optional[str]:
         """Read-only property accessing the destination title."""
-        pass
+        return self.get("/Title")
 
     @property
     def page(self) -> Optional[int]:
         """Read-only property accessing the destination page number."""
-        pass
+        page = self.get("/Page")
+        if isinstance(page, IndirectObject):
+            return page.idnum
+        return None
 
     @property
     def typ(self) -> Optional[str]:
         """Read-only property accessing the destination type."""
-        pass
+        return self.get("/Type")
 
     @property
     def zoom(self) -> Optional[int]:
         """Read-only property accessing the zoom factor."""
-        pass
+        return self.get("/Zoom")
 
     @property
     def left(self) -> Optional[FloatObject]:
         """Read-only property accessing the left horizontal coordinate."""
-        pass
+        return self.get("/Left")
 
     @property
     def right(self) -> Optional[FloatObject]:
         """Read-only property accessing the right horizontal coordinate."""
-        pass
+        return self.get("/Right")
 
     @property
     def top(self) -> Optional[FloatObject]:
         """Read-only property accessing the top vertical coordinate."""
-        pass
+        return self.get("/Top")
 
     @property
     def bottom(self) -> Optional[FloatObject]:
         """Read-only property accessing the bottom vertical coordinate."""
-        pass
+        return self.get("/Bottom")
 
     @property
     def color(self) -> Optional['ArrayObject']:
         """Read-only property accessing the color in (R, G, B) with values 0.0-1.0."""
-        pass
+        return self.get("/C")
 
     @property
     def font_format(self) -> Optional[OutlineFontFlag]:
@@ -478,7 +564,7 @@ class Destination(TreeObject):
 
         1=italic, 2=bold, 3=both
         """
-        pass
+        return OutlineFontFlag(self.get("/F", 0))
 
     @property
     def outline_count(self) -> Optional[int]:
@@ -489,4 +575,4 @@ class Destination(TreeObject):
         negative = collapsed
         absolute value = number of visible descendants at all levels
         """
-        pass
+        return self.get("/Count")
