@@ -473,7 +473,29 @@ class PdfWriter(PdfDocCommon):
         Returns:
             A tuple (bool, IO).
         """
-        pass
+        if isinstance(stream, (str, Path)):
+            with open(stream, "wb") as fp:
+                return self._write(fp)
+        else:
+            return self._write(stream)
+
+    def _write(self, stream: IO[Any]) -> Tuple[bool, IO[Any]]:
+        stream.write(self._header + b"\n")
+        
+        for obj in self._objects:
+            obj.write_to_stream(stream)
+        
+        xref_location = stream.tell()
+        stream.write(b"xref\n")
+        stream.write(f"0 {len(self._objects) + 1}\n".encode())
+        stream.write(b"0000000000 65535 f \n")
+        
+        for obj in self._objects:
+            stream.write(f"{obj.offset:010d} 00000 n \n".encode())
+        
+        self._write_trailer(stream, xref_location)
+        
+        return (True, stream)
 
     def _write_trailer(self, stream: StreamType, xref_location: int) -> None:
         """
@@ -493,7 +515,16 @@ class PdfWriter(PdfDocCommon):
             infos: a Python dictionary where each key is a field
                 and each value is your new metadata.
         """
-        pass
+        if not isinstance(self._info_obj, DictionaryObject):
+            self._info_obj = DictionaryObject()
+
+        for key, value in infos.items():
+            if isinstance(value, (str, bool, int, float)):
+                self._info_obj[NameObject('/' + key)] = create_string_object(str(value))
+            elif isinstance(value, datetime):
+                self._info_obj[NameObject('/' + key)] = create_string_object(value.strftime("D:%Y%m%d%H%M%S"))
+            else:
+                raise TypeError(f"Metadata value for {key} must be a string, bool, int, float, or datetime")
 
     def _sweep_indirect_references(self, root: Union[ArrayObject, BooleanObject, DictionaryObject, FloatObject, IndirectObject, NameObject, PdfObject, NumberObject, TextStringObject, NullObject]) -> None:
         """
@@ -582,7 +613,60 @@ class PdfWriter(PdfDocCommon):
         Returns:
             The added outline item as an indirect object.
         """
-        pass
+        if isinstance(page_number, PageObject):
+            page_number = self.get_page_number(page_number)
+        elif isinstance(page_number, IndirectObject):
+            page_number = self.get_page_number(page_number.get_object())
+
+        if color is not None:
+            if isinstance(color, str):
+                color = hex_to_rgb(color)
+            color = ArrayObject([FloatObject(c) for c in color])
+
+        outline_item = TreeObject()
+        outline_item.update({
+            NameObject("/Title"): TextStringObject(title),
+            NameObject("/Dest"): Destination(NameObject("/Fit"), NumberObject(page_number), fit).dest_array
+        })
+
+        if color:
+            outline_item[NameObject("/C")] = color
+        if bold or italic:
+            format_flag = 0
+            if bold:
+                format_flag |= 2
+            if italic:
+                format_flag |= 1
+            outline_item[NameObject("/F")] = NumberObject(format_flag)
+        if is_open:
+            outline_item[NameObject("/Count")] = NumberObject(1)
+
+        if parent is None:
+            parent = self._root_object.get("/Outlines", None)
+            if parent is None:
+                parent = TreeObject()
+                self._root_object[NameObject("/Outlines")] = self._add_object(parent)
+
+        parent = cast(TreeObject, parent)
+        if "/Count" not in parent:
+            parent[NameObject("/Count")] = NumberObject(0)
+        parent[NameObject("/Count")] = NumberObject(parent[NameObject("/Count")] + 1)
+
+        if before is None:
+            parent[NameObject("/Last")] = outline_item
+            if "/First" not in parent:
+                parent[NameObject("/First")] = outline_item
+        else:
+            outline_item[NameObject("/Next")] = before
+            outline_item[NameObject("/Prev")] = before.get("/Prev", None)
+            if before.get("/Prev", None) is not None:
+                before["/Prev"][NameObject("/Next")] = outline_item
+            else:
+                parent[NameObject("/First")] = outline_item
+            before[NameObject("/Prev")] = outline_item
+
+        outline_item[NameObject("/Parent")] = parent
+        return self._add_object(outline_item)
 
     def remove_links(self) -> None:
         """Remove links and annotations from this output."""
@@ -695,7 +779,11 @@ class PdfWriter(PdfDocCommon):
            * - /TwoPageRight
              - Show two pages at a time, odd-numbered pages on the right
         """
-        pass
+        if not isinstance(layout, NameObject):
+            if layout not in self._valid_layouts:
+                raise ValueError(f"Layout should be one of: {', '.join(self._valid_layouts)}")
+            layout = NameObject(layout)
+        self._root_object[NameObject("/PageLayout")] = layout
 
     @property
     def page_layout(self) -> Optional[LayoutType]:
@@ -744,7 +832,11 @@ class PdfWriter(PdfDocCommon):
            * - /UseAttachments
              - Show attachments panel
         """
-        pass
+        return self._root_object.get("/PageMode", None)
+
+    @page_mode.setter
+    def page_mode(self, value: PagemodeType) -> None:
+        self.set_page_mode(value)
 
     def add_annotation(self, page_number: Union[int, PageObject], annotation: Dict[str, Any]) -> DictionaryObject:
         """
@@ -801,7 +893,7 @@ class PdfWriter(PdfDocCommon):
                 if ``/Annots`` is part of the list, the annotation will be ignored
                 if ``/B`` is part of the list, the articles will be ignored
         """
-        pass
+        self.merge(None, fileobj, outline_item, pages, import_outline, excluded_fields)
 
     def merge(self, position: Optional[int], fileobj: Union[Path, StrByteType, PdfReader], outline_item: Optional[str]=None, pages: Optional[Union[PageRangeSpec, List[PageObject]]]=None, import_outline: bool=True, excluded_fields: Optional[Union[List[str], Tuple[str, ...]]]=()) -> None:
         """
@@ -832,7 +924,46 @@ class PdfWriter(PdfDocCommon):
         Raises:
             TypeError: The pages attribute is not configured properly
         """
-        pass
+        if not isinstance(fileobj, PdfReader):
+            fileobj = PdfReader(fileobj)
+
+        if pages is None:
+            pages = list(range(len(fileobj.pages)))
+        elif isinstance(pages, PageRange):
+            pages = list(range(*pages.indices(len(fileobj.pages))))
+        elif isinstance(pages, tuple):
+            pages = list(range(*pages))
+        elif not isinstance(pages, list):
+            raise TypeError("pages must be a list, tuple, or PageRange object")
+
+        if position is None:
+            position = len(self.pages)
+
+        for i, page in enumerate(pages):
+            if isinstance(page, int):
+                page_obj = fileobj.pages[page]
+            else:
+                page_obj = page
+
+            self.insert_page(page_obj, position + i, excluded_fields=excluded_fields)
+
+        if outline_item is not None:
+            self.add_outline_item(outline_item, position + 1)
+
+        if import_outline:
+            outline = fileobj.outline
+            if outline:
+                self._add_outline_from_reader(outline, position)
+
+    def _add_outline_from_reader(self, outline, position):
+        for item in outline:
+            if isinstance(item, list):
+                self._add_outline_from_reader(item, position)
+            else:
+                page_number = item.page.page_number if item.page else None
+                if page_number is not None:
+                    new_page_number = position + page_number + 1
+                    self.add_outline_item(item.title, new_page_number)
 
     def _add_articles_thread(self, thread: DictionaryObject, pages: Dict[int, PageObject], reader: PdfReader) -> IndirectObject:
         """
@@ -875,6 +1006,8 @@ class PdfWriter(PdfDocCommon):
 
     def close(self) -> None:
         """Implemented for API harmonization."""
+        # Since PdfWriter doesn't open any resources that need to be closed,
+        # this method is essentially a no-op.
         pass
 
     def find_bookmark(self, outline_item: Dict[str, Any], root: Optional[OutlineType]=None) -> Optional[List[int]]:
