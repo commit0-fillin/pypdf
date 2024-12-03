@@ -46,12 +46,12 @@ class DocumentInformation(DictionaryObject):
         Returns a ``TextStringObject`` or ``None`` if the title is not
         specified.
         """
-        pass
+        return self.get("/Title", None)
 
     @property
     def title_raw(self) -> Optional[str]:
         """The "raw" version of title; can return a ``ByteStringObject``."""
-        pass
+        return self.get("/Title", None)
 
     @property
     def author(self) -> Optional[str]:
@@ -61,12 +61,12 @@ class DocumentInformation(DictionaryObject):
         Returns a ``TextStringObject`` or ``None`` if the author is not
         specified.
         """
-        pass
+        return self.get("/Author", None)
 
     @property
     def author_raw(self) -> Optional[str]:
         """The "raw" version of author; can return a ``ByteStringObject``."""
-        pass
+        return self.get("/Author", None)
 
     @property
     def subject(self) -> Optional[str]:
@@ -76,12 +76,12 @@ class DocumentInformation(DictionaryObject):
         Returns a ``TextStringObject`` or ``None`` if the subject is not
         specified.
         """
-        pass
+        return self.get("/Subject", None)
 
     @property
     def subject_raw(self) -> Optional[str]:
         """The "raw" version of subject; can return a ``ByteStringObject``."""
-        pass
+        return self.get("/Subject", None)
 
     @property
     def creator(self) -> Optional[str]:
@@ -93,12 +93,12 @@ class DocumentInformation(DictionaryObject):
         document from which it was converted. Returns a ``TextStringObject`` or
         ``None`` if the creator is not specified.
         """
-        pass
+        return self.get("/Creator", None)
 
     @property
     def creator_raw(self) -> Optional[str]:
         """The "raw" version of creator; can return a ``ByteStringObject``."""
-        pass
+        return self.get("/Creator", None)
 
     @property
     def producer(self) -> Optional[str]:
@@ -110,17 +110,20 @@ class DocumentInformation(DictionaryObject):
         PDF. Returns a ``TextStringObject`` or ``None`` if the producer is not
         specified.
         """
-        pass
+        return self.get("/Producer", None)
 
     @property
     def producer_raw(self) -> Optional[str]:
         """The "raw" version of producer; can return a ``ByteStringObject``."""
-        pass
+        return self.get("/Producer", None)
 
     @property
     def creation_date(self) -> Optional[datetime]:
         """Read-only property accessing the document's creation date."""
-        pass
+        date_str = self.get("/CreationDate", None)
+        if date_str is not None:
+            return parse_iso8824_date(date_str)
+        return None
 
     @property
     def creation_date_raw(self) -> Optional[str]:
@@ -130,7 +133,7 @@ class DocumentInformation(DictionaryObject):
         Typically in the format ``D:YYYYMMDDhhmmss[+Z-]hh'mm`` where the suffix
         is the offset from UTC.
         """
-        pass
+        return self.get("/CreationDate", None)
 
     @property
     def modification_date(self) -> Optional[datetime]:
@@ -139,7 +142,10 @@ class DocumentInformation(DictionaryObject):
 
         The date and time the document was most recently modified.
         """
-        pass
+        date_str = self.get("/ModDate", None)
+        if date_str is not None:
+            return parse_iso8824_date(date_str)
+        return None
 
     @property
     def modification_date_raw(self) -> Optional[str]:
@@ -150,7 +156,7 @@ class DocumentInformation(DictionaryObject):
         Typically in the format ``D:YYYYMMDDhhmmss[+Z-]hh'mm`` where the suffix
         is the offset from UTC.
         """
-        pass
+        return self.get("/ModDate", None)
 
 class PdfDocCommon:
     """
@@ -170,7 +176,14 @@ class PdfDocCommon:
         information dictionaries, and these metadata streams will not be
         accessed by this function.
         """
-        pass
+        if "/Info" not in self.trailer:
+            return None
+        info = self.trailer["/Info"]
+        if not isinstance(info, DictionaryObject):
+            return None
+        retval = DocumentInformation()
+        retval.update(info)
+        return retval
 
     @abstractmethod
     def _repr_mimebundle_(self, include: Union[None, Iterable[str]]=None, exclude: Union[None, Iterable[str]]=None) -> Dict[str, Any]:
