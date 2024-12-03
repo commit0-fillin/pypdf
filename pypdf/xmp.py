@@ -98,4 +98,12 @@ class XmpInformation(PdfObject):
         Returns:
             A dictionary of key/value items for custom metadata properties.
         """
-        pass
+        if "/pdfx:pdfx" not in self.cache:
+            self.cache["/pdfx:pdfx"] = {}
+            for element in self.rdf_root.getElementsByTagNameNS(PDFX_NAMESPACE, "pdfx"):
+                for child in element.childNodes:
+                    if child.nodeType == child.ELEMENT_NODE:
+                        key = child.localName
+                        value = child.firstChild.nodeValue if child.firstChild else None
+                        self.cache["/pdfx:pdfx"][key] = value
+        return self.cache["/pdfx:pdfx"]
