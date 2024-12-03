@@ -37,7 +37,7 @@ class PdfObject(PdfObjectProtocol):
         Returns:
           The cloned PdfObject
         """
-        pass
+        return self._reference_clone(self, pdf_dest, force_duplicate)
 
     def _reference_clone(self, clone: Any, pdf_dest: PdfWriterProtocol, force_duplicate: bool=False) -> PdfObjectProtocol:
         """
@@ -53,17 +53,21 @@ class PdfObject(PdfObjectProtocol):
         Returns:
           The clone
         """
-        pass
+        if hasattr(self, 'indirect_reference') and self.indirect_reference is not None:
+            if not force_duplicate and self.indirect_reference.idnum in pdf_dest._id_translated:
+                return pdf_dest._id_translated[self.indirect_reference.idnum]
+            clone.indirect_reference = pdf_dest._add_object(clone)
+        return clone
 
     def get_object(self) -> Optional['PdfObject']:
         """Resolve indirect references."""
-        pass
+        return self
 
 class NullObject(PdfObject):
 
     def clone(self, pdf_dest: PdfWriterProtocol, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'NullObject':
         """Clone object into pdf_dest."""
-        pass
+        return NullObject()
 
     def __repr__(self) -> str:
         return 'NullObject'
@@ -75,7 +79,7 @@ class BooleanObject(PdfObject):
 
     def clone(self, pdf_dest: PdfWriterProtocol, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'BooleanObject':
         """Clone object into pdf_dest."""
-        pass
+        return BooleanObject(self.value)
 
     def __eq__(self, __o: object) -> bool:
         if isinstance(__o, BooleanObject):
@@ -97,7 +101,10 @@ class IndirectObject(PdfObject):
 
     def clone(self, pdf_dest: PdfWriterProtocol, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'IndirectObject':
         """Clone object into pdf_dest."""
-        pass
+        obj = self.get_object()
+        if obj is not None:
+            return obj.clone(pdf_dest, force_duplicate, ignore_fields)
+        return NullObject()
 
     def __deepcopy__(self, memo: Any) -> 'IndirectObject':
         return IndirectObject(self.idnum, self.generation, self.pdf)
@@ -136,7 +143,7 @@ class FloatObject(float, PdfObject):
 
     def clone(self, pdf_dest: Any, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'FloatObject':
         """Clone object into pdf_dest."""
-        pass
+        return FloatObject(self)
 
     def __repr__(self) -> str:
         return self.myrepr()
@@ -153,7 +160,7 @@ class NumberObject(int, PdfObject):
 
     def clone(self, pdf_dest: Any, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'NumberObject':
         """Clone object into pdf_dest."""
-        pass
+        return NumberObject(self)
 
 class ByteStringObject(bytes, PdfObject):
     """
@@ -166,12 +173,12 @@ class ByteStringObject(bytes, PdfObject):
 
     def clone(self, pdf_dest: Any, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'ByteStringObject':
         """Clone object into pdf_dest."""
-        pass
+        return ByteStringObject(self)
 
     @property
     def original_bytes(self) -> bytes:
         """For compatibility with TextStringObject.original_bytes."""
-        pass
+        return self
 
 class TextStringObject(str, PdfObject):
     """
@@ -205,7 +212,11 @@ class TextStringObject(str, PdfObject):
 
     def clone(self, pdf_dest: Any, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'TextStringObject':
         """Clone object into pdf_dest."""
-        pass
+        clone = TextStringObject(self)
+        clone.autodetect_pdfdocencoding = self.autodetect_pdfdocencoding
+        clone.autodetect_utf16 = self.autodetect_utf16
+        clone.utf16_bom = self.utf16_bom
+        return clone
 
     @property
     def original_bytes(self) -> bytes:
@@ -215,7 +226,12 @@ class TextStringObject(str, PdfObject):
         if that occurs, this "original_bytes" property can be used to
         back-calculate what the original encoded bytes were.
         """
-        pass
+        if self.autodetect_utf16:
+            return self.utf16_bom + self.encode("utf-16be")
+        elif self.autodetect_pdfdocencoding:
+            return encode_pdfdocencoding(self)
+        else:
+            raise UnicodeEncodeError("No information about original bytes")
 
 class NameObject(str, PdfObject):
     delimiter_pattern = re.compile(b'\\s+|[\\(\\)<>\\[\\]{}/%]')
@@ -224,5 +240,5 @@ class NameObject(str, PdfObject):
 
     def clone(self, pdf_dest: Any, force_duplicate: bool=False, ignore_fields: Optional[Sequence[Union[str, int]]]=()) -> 'NameObject':
         """Clone object into pdf_dest."""
-        pass
+        return NameObject(self)
     CHARSETS = ('utf-8', 'gbk', 'latin1')
