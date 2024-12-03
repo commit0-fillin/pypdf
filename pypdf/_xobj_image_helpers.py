@@ -27,18 +27,59 @@ def _get_imagemode(color_space: Union[str, List[Any], Any], color_components: in
         Image mode not taking into account mask(transparency)
         ColorInversion is required (like for some DeviceCMYK)
     """
-    pass
+    if depth > MAX_IMAGE_MODE_NESTING_DEPTH:
+        return prev_mode, False
+
+    if isinstance(color_space, str):
+        if color_space == ColorSpaces.DEVICE_RGB:
+            return 'RGB', False
+        elif color_space == ColorSpaces.DEVICE_CMYK:
+            return 'CMYK', True
+        elif color_space == ColorSpaces.DEVICE_GRAY:
+            return 'L', False
+    elif isinstance(color_space, list) and len(color_space) > 0:
+        if color_space[0] == '/ICCBased' and len(color_space) > 1:
+            return _get_imagemode(color_space[1], color_components, prev_mode, depth + 1)
+        elif color_space[0] == '/Indexed' and len(color_space) > 1:
+            return _get_imagemode(color_space[1], color_components, prev_mode, depth + 1)
+
+    if color_components == 1:
+        return 'L', False
+    elif color_components == 3:
+        return 'RGB', False
+    elif color_components == 4:
+        return 'CMYK', True
+
+    return prev_mode, False
 
 def _handle_flate(size: Tuple[int, int], data: bytes, mode: mode_str_type, color_space: str, colors: int, obj_as_text: str) -> Tuple[Image.Image, str, str, bool]:
     """
     Process image encoded in flateEncode
     Returns img, image_format, extension, color inversion
     """
-    pass
+    try:
+        img = Image.frombytes(mode, size, data)
+        return img, 'PNG', '.png', mode == 'CMYK'
+    except Exception as e:
+        logger_warning(f"Error processing FlateDecode image: {e}", __name__)
+        try:
+            # Fallback to raw mode
+            img = Image.frombytes('RAW', size, data)
+            return img, 'PNG', '.png', False
+        except Exception as e2:
+            logger_warning(f"Error processing FlateDecode image in raw mode: {e2}", __name__)
+            raise PdfReadError(f"Failed to process FlateDecode image: {e2}")
 
 def _handle_jpx(size: Tuple[int, int], data: bytes, mode: mode_str_type, color_space: str, colors: int) -> Tuple[Image.Image, str, str, bool]:
     """
-    Process image encoded in flateEncode
+    Process image encoded in JPXDecode
     Returns img, image_format, extension, inversion
     """
-    pass
+    try:
+        img = Image.open(BytesIO(data))
+        if img.mode != mode:
+            img = img.convert(mode)
+        return img, 'JPEG2000', '.jp2', mode == 'CMYK'
+    except Exception as e:
+        logger_warning(f"Error processing JPXDecode image: {e}", __name__)
+        raise PdfReadError(f"Failed to process JPXDecode image: {e}")
