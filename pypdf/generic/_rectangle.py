@@ -28,7 +28,7 @@ class RectangleObject(ArrayObject):
         Property to read and modify the lower left coordinate of this box
         in (x,y) form.
         """
-        pass
+        return (float(self[0]), float(self[1]))
 
     @property
     def lower_right(self) -> Tuple[float, float]:
@@ -36,7 +36,7 @@ class RectangleObject(ArrayObject):
         Property to read and modify the lower right coordinate of this box
         in (x,y) form.
         """
-        pass
+        return (float(self[2]), float(self[1]))
 
     @property
     def upper_left(self) -> Tuple[float, float]:
@@ -44,7 +44,7 @@ class RectangleObject(ArrayObject):
         Property to read and modify the upper left coordinate of this box
         in (x,y) form.
         """
-        pass
+        return (float(self[0]), float(self[3]))
 
     @property
     def upper_right(self) -> Tuple[float, float]:
@@ -52,4 +52,4 @@ class RectangleObject(ArrayObject):
         Property to read and modify the upper right coordinate of this box
         in (x,y) form.
         """
-        pass
+        return (float(self[2]), float(self[3]))
