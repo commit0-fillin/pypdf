@@ -103,7 +103,7 @@ class PdfWriter(PdfDocCommon):
         Note that this property, if true, will remain true even after the
         :meth:`decrypt()<pypdf.PdfReader.decrypt>` method is called.
         """
-        pass
+        return self._encryption is not None
 
     @property
     def root_object(self) -> DictionaryObject:
@@ -113,7 +113,7 @@ class PdfWriter(PdfDocCommon):
         Note:
             Recommended only for read access.
         """
-        pass
+        return self._root_object
 
     @property
     def _info(self) -> Optional[DictionaryObject]:
@@ -123,17 +123,22 @@ class PdfWriter(PdfDocCommon):
         Returns:
             /Info Dictionary; None if the entry does not exist
         """
-        pass
+        return self._info_obj if isinstance(self._info_obj, DictionaryObject) else None
 
     @property
     def xmp_metadata(self) -> Optional[XmpInformation]:
         """XMP (Extensible Metadata Platform) data."""
-        pass
+        if "/Metadata" not in self._root_object:
+            return None
+        return XmpInformation(self._root_object["/Metadata"])
 
     @xmp_metadata.setter
     def xmp_metadata(self, value: Optional[XmpInformation]) -> None:
         """XMP (Extensible Metadata Platform) data."""
-        pass
+        if value is None:
+            del self._root_object["/Metadata"]
+        else:
+            self._root_object[NameObject("/Metadata")] = value.xmp_document
 
     def __enter__(self) -> 'PdfWriter':
         """Store that writer is initialized by 'with'."""
@@ -157,7 +162,18 @@ class PdfWriter(PdfDocCommon):
 
         See https://ipython.readthedocs.io/en/stable/config/integrating.html
         """
-        pass
+        from io import BytesIO
+        
+        buffer = BytesIO()
+        self.write(buffer)
+        buffer.seek(0)
+        
+        data = buffer.getvalue()
+        
+        return {
+            'application/pdf': data,
+            'text/plain': f'PDF document, version {self.pdf_header[5:]}',
+        }
 
     @property
     def pdf_header(self) -> str:
@@ -170,7 +186,13 @@ class PdfWriter(PdfDocCommon):
 
         Note: `pdf_header` returns a string but accepts bytes or str for writing
         """
-        pass
+        return self._header.decode('ascii')
+
+    @pdf_header.setter
+    def pdf_header(self, value: Union[str, bytes]) -> None:
+        if isinstance(value, str):
+            value = value.encode('ascii')
+        self._header = value
 
     def set_need_appearances_writer(self, state: bool=True) -> None:
         """
@@ -186,7 +208,11 @@ class PdfWriter(PdfDocCommon):
         Returns:
             None
         """
-        pass
+        if "/AcroForm" not in self._root_object:
+            self._root_object[NameObject("/AcroForm")] = DictionaryObject()
+
+        need_appearances = NameObject("/NeedAppearances")
+        self._root_object["/AcroForm"][need_appearances] = BooleanObject(state)
 
     def add_page(self, page: PageObject, excluded_keys: Iterable[str]=()) -> PageObject:
         """
